@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace GymManagement.Migrations
+namespace GymManagement.DAL.Migrations
 {
     /// <inheritdoc />
     public partial class UpdateTablePlans : Migration
