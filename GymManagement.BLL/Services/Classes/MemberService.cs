@@ -1,4 +1,5 @@
-﻿using GymManagement.BLL.Services.Interfaces;
+﻿using AutoMapper;
+using GymManagement.BLL.Services.Interfaces;
 using GymManagement.BLL.ViewModels.MemberviewModels;
 using GymManagement.DAL.DATA.Models;
 using GymManagement.DAL.Repositories.Interfaces;
@@ -10,11 +11,17 @@ namespace GymManagement.BLL.Services.Classes
 {
     public class MemberService : IMemberService
     {
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IMapper _mapper;
         private readonly IGenericRepository<Member> _memberRepository;
-
-        public MemberService(IGenericRepository<Member> memberRepository)
+       
+        public MemberService(IUnitOfWork unitOfWork,
+                             IMapper mapper)
         {
-            _memberRepository = memberRepository;
+            _unitOfWork = unitOfWork;
+            _mapper = mapper;
+            _memberRepository = _unitOfWork.GetRepository<Member>();
+            
         }
 
         public async Task<bool> CreateMemberAsync(CreateMemberViewModel memberVM, CancellationToken ct = default)
@@ -25,33 +32,12 @@ namespace GymManagement.BLL.Services.Classes
             //check phone
             var phoneExist = await _memberRepository.AnyAsync(x => x.Phone == memberVM.Phone, ct);
 
-            if(emailExist || phoneExist) return false;
+            if (emailExist || phoneExist) return false;
 
-            var member = new Member
-            {
-                Name = memberVM.Name,
-                Email = memberVM.Email,
-                Phone = memberVM.Phone,
-                Gender = memberVM.Gender,
-                //Photo = memberVM.Photo,
-                DateOfBirth = memberVM.DateOfBirth,
-                Address = new Address()
-                {
-                    BuildingNumber = memberVM.BuildingNumber,
-                    Street = memberVM.Street,
-                    city = memberVM.City,
-                },
-                HealthRecord = new HealthRecord()
-                {
-                    BloodType = memberVM.HealthRecordViewModel.BloodType,
-                    Height = memberVM.HealthRecordViewModel.Height,
-                    Weight = memberVM.HealthRecordViewModel.Weight,
-                    Note = memberVM.HealthRecordViewModel.Note,
+            var member = _mapper.Map<Member>(memberVM);
 
-                }
-
-            };
-             var res = await _memberRepository.AddAsync(member, ct);
+            _memberRepository.Add(member, ct);
+            var res = await _unitOfWork.SaveChangesAsync(ct);
             return res > 0;
 
         }
@@ -60,41 +46,91 @@ namespace GymManagement.BLL.Services.Classes
         {
             var members = await _memberRepository.GetAllAsync();
 
-            if (members.Any()) return [];
+            if (!members.Any()) return [];
 
 
-            //Map members to MemberVM
-            //Manually map
-
-            //List<MemberVM> membersToReturn = new List<MemberVM>();
-            //foreach (var member in members)
-            //{
-            //    var memberVM = new MemberVM()
-            //    {
-            //        Id = member.Id,
-            //        Photo = member.Photo,
-            //        Name = member.Name,
-            //        Email = member.Email,
-            //        //Phone = member.Phone,
-            //        Gender = member.Gender.ToString()
-            //    };
-            //    membersToReturn.Add(memberVM);
-            //}   
-
-            //return membersToReturn;
-
-            //or
-
-            var membersToReturn = members.Select(member => new MemberVM
-            {
-                Id = member.Id,
-                Photo = member.Photo,
-                Name = member.Name,
-                Email = member.Email,
-                Phone = member.Phone,
-                Gender = member.Gender.ToString()
-            });
+            var membersToReturn = _mapper.Map<IEnumerable<MemberVM>>(members);
             return membersToReturn;
         }
+
+        public async Task<MemberVM?> GetMemberDetailsByIdAsync(int id, CancellationToken ct = default)
+        {
+            var member = await _memberRepository.GetByIdAsync(id, ct);
+            if (member == null) return null;
+
+            var memberToReturn = _mapper.Map<Member, MemberVM>(member);
+
+            var activeMembership = await _unitOfWork.GetRepository<MemberShip>().FirstOrDefaultAsync(m => m.MemberId == member.Id && m.EndDate > DateTime.Now);
+            if (activeMembership is not null)
+            {
+                var activePlan = await _unitOfWork.GetRepository<Plan>().GetByIdAsync(activeMembership.PlanId);
+                memberToReturn.PlanName = activePlan?.Name;
+                memberToReturn.MembershipStartDate = activeMembership.CreatedAt.ToString();
+                memberToReturn.MembershipEndDate = activeMembership.EndDate.ToString();
+            }
+            return memberToReturn;
+        }
+
+        public async Task<HealthRecordViewModel?> GetMemberHealthRecordAsync(int memberId, CancellationToken ct = default)
+        {
+            var record = await _unitOfWork.GetRepository<HealthRecord>().FirstOrDefaultAsync(hr => hr.MemberId == memberId, ct: ct);
+            if (record == null) return null;
+
+            else return _mapper.Map<HealthRecordViewModel>(record);
+        }
+
+        public async Task<MemberToUpdateViewModel?> GetMemberToUpdateAsync(int memberId, CancellationToken ct = default)
+        {
+            var member = await _memberRepository.GetByIdAsync(memberId, ct);
+            if (member == null) return null;
+            else return _mapper.Map<MemberToUpdateViewModel>(member);
+
+        }
+
+
+        public async Task<bool> UpdateMemberAsync(int memberId, MemberToUpdateViewModel memberVM, CancellationToken ct = default)
+        {
+            var member = await _memberRepository.GetByIdAsync(memberId, ct);
+            if (member == null) return false;
+
+            //check email
+            var emailExist = await _memberRepository.AnyAsync(x => x.Email == memberVM.Email && x.Id != memberId, ct);
+
+            //check phone
+            var phoneExist = await _memberRepository.AnyAsync(x => x.Phone == memberVM.Phone && x.Id != memberId, ct);
+
+            if (emailExist || phoneExist) return false;
+
+            //member.Email = memberVM.Email; //Still My Email Or New Unique Email
+            //member.Phone = memberVM.Phone; // Still My Phone Or New Unique Phone
+
+            //member.Address.city = memberVM.City;
+            //member.Address.Street = memberVM.Street;
+            //member.Address.BuildingNumber = memberVM.BuildingNumber;
+            member.UpdatedAt = DateTime.Now;
+
+            _mapper.Map(memberVM, member);
+
+           _memberRepository.Update(member, ct);
+            var res = await _unitOfWork.SaveChangesAsync(ct);
+            return res > 0;
+
+
+
+        }
+
+        public async Task<bool> RemoveMemberAsync(int memberId, CancellationToken ct = default)
+        {
+            var member = await _memberRepository.GetByIdAsync(memberId, ct);
+            if (member == null) return false;
+
+            var hasFutureBookings = await _unitOfWork.GetRepository<Booking>().AnyAsync(b=> b.MemberId == memberId && b.Session.StartDate > DateTime.Now, ct);
+            if (hasFutureBookings) return false;
+
+           _memberRepository.Delete(member, ct);
+            var res = await _unitOfWork.SaveChangesAsync(ct);
+            return res > 0;
+        }
     }
+
 }
