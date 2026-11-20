@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using GymManagement.BLL.ViewModels.MemberviewModels;
+using GymManagement.BLL.ViewModels.SessionViewModels;
 using GymManagement.DAL.DATA.Models;
 using System;
 using System.Collections.Generic;
@@ -10,6 +11,15 @@ namespace GymManagement.BLL
     public class MappingProfile : Profile
     {
         public MappingProfile()
+        {
+            MapMember();
+
+            MapSession();
+
+
+        }
+
+        private void MapMember()
         {
             CreateMap<Member, MemberVM>()
                 .ForMember(dest => dest.Address, opt => opt.MapFrom(src => $"{src.Address.BuildingNumber} - {src.Address.Street} - {src.Address.city}"))
@@ -40,28 +50,24 @@ namespace GymManagement.BLL
                     city = src.City
                 }))
                 .ForMember(dest => dest.HealthRecord, opt => opt.MapFrom(src => src.HealthRecordViewModel));
+        }
+
+        private void MapSession()
+        {
+            CreateMap<CreateSessionViewModel, Session>();
+            CreateMap<Trainer, TrainerSelectViewModel>()
+                .ForMember(dest => dest.Name, opt => opt.MapFrom(src => $"{src.Name} - {src.Speciality}"));
+            CreateMap<Category, CategorySelectViewModel>()
+                .ForMember(dest => dest.Name, opt => opt.MapFrom(src => src.CategoryName));
+            CreateMap<Session, SessionViewModel>()
+                .ForMember(dest => dest.TrainerName, opt => opt.MapFrom(src => src.Trainer.Name))
+                .ForMember(dest => dest.CategoryName, opt => opt.MapFrom(src => src.Category.CategoryName));
+            CreateMap<UpdateSessionViewModel, Session>().ReverseMap();
+
+
+        }
 
 
 
-
-            //var member = new Member
-            //{
-            // 
-            //    Address = new Address()
-            //    {
-            //        BuildingNumber = memberVM.BuildingNumber,
-            //        Street = memberVM.Street,
-            //        city = memberVM.City,
-            //    },
-            //    HealthRecord = new HealthRecord()
-            //    {
-            //        BloodType = memberVM.HealthRecordViewModel.BloodType,
-            //        Height = memberVM.HealthRecordViewModel.Height,
-            //        Weight = memberVM.HealthRecordViewModel.Weight,
-            //        Note = memberVM.HealthRecordViewModel.Note,
-
-            //    }
-
-            }
     }
 }
